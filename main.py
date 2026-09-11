@@ -71,7 +71,6 @@ selected_movie = st.selectbox(
     movie_list
 )
 
-
 # 선택한 영화 데이터
 movie_df = df[
     df["영화명"].astype(str) == selected_movie
@@ -79,7 +78,6 @@ movie_df = df[
 
 # 날짜순 정렬
 movie_df = movie_df.sort_values("날짜")
-
 
 # 날짜별 일관객
 movie_daily = (
@@ -89,9 +87,8 @@ movie_daily = (
     .sort_values("날짜")
 )
 
-
-# Plotly 선 그래프
-fig = px.line(
+# 선 그래프
+fig1 = px.line(
     movie_daily,
     x="날짜",
     y="일관객",
@@ -103,31 +100,28 @@ fig = px.line(
     }
 )
 
-
 # 마우스를 올렸을 때 날짜와 관객수 표시
-fig.update_traces(
+fig1.update_traces(
     hovertemplate=
     "날짜: %{x|%Y-%m-%d}<br>"
     "관객수: %{y:,.0f}명"
 )
 
-
-fig.update_layout(
+fig1.update_layout(
     hovermode="x unified",
     xaxis_title="날짜",
     yaxis_title="일관객 수(명)",
     height=500
 )
 
-
 st.plotly_chart(
-    fig,
+    fig1,
     use_container_width=True
 )
 
 
 # ============================================================
-# 직접 작성하는 부분
+# 그래프 1 - 직접 작성
 # ============================================================
 
 st.subheader("이 그래프로 알 수 있는 것")
@@ -135,19 +129,86 @@ st.subheader("이 그래프로 알 수 있는 것")
 st.text_area(
     "내용을 직접 입력하세요.",
     placeholder="이 그래프로 알 수 있는 것을 여기에 작성하세요.",
-    height=100
+    height=100,
+    key="graph1_explanation"
 )
 
 
 # ============================================================
-# 그래프 2
+# 그래프 2. 기간 동안 일관객 합계가 가장 큰 5편
 # ============================================================
 
 st.divider()
 
-st.header("📊 그래프 2")
+st.header("📊 그래프 2. 일관객 합계 상위 5편")
 
-st.write("앞으로 추가할 그래프 영역입니다.")
+# 영화별 전체 기간 일관객 합계 계산
+top5_movies = (
+    df.groupby("영화명", as_index=False)["일관객"]
+    .sum()
+    .sort_values("일관객", ascending=False)
+    .head(5)["영화명"]
+    .tolist()
+)
+
+# 상위 5편만 선택
+top5_df = df[
+    df["영화명"].isin(top5_movies)
+].copy()
+
+# 날짜와 영화명 기준으로 정렬
+top5_df = top5_df.sort_values(
+    ["날짜", "영화명"]
+)
+
+# 날짜별 영화별 일관객
+top5_daily = (
+    top5_df
+    .groupby(["날짜", "영화명"], as_index=False)["일관객"]
+    .sum()
+    .sort_values(["날짜", "영화명"])
+)
+
+# 그래프 생성
+fig2 = px.line(
+    top5_daily,
+    x="날짜",
+    y="일관객",
+    color="영화명",
+    markers=True,
+    title="일관객 합계가 가장 큰 5편의 날짜별 일관객",
+    labels={
+        "날짜": "날짜",
+        "일관객": "일관객",
+        "영화명": "영화"
+    }
+)
+
+# 마우스를 올렸을 때 날짜와 관객수 표시
+fig2.update_traces(
+    hovertemplate=
+    "영화: %{fullData.name}<br>"
+    "날짜: %{x|%Y-%m-%d}<br>"
+    "관객수: %{y:,.0f}명"
+)
+
+fig2.update_layout(
+    hovermode="x unified",
+    xaxis_title="날짜",
+    yaxis_title="일관객 수(명)",
+    height=600,
+    legend_title="영화"
+)
+
+st.plotly_chart(
+    fig2,
+    use_container_width=True
+)
+
+
+# ============================================================
+# 그래프 2 - 직접 작성
+# ============================================================
 
 st.subheader("이 그래프로 알 수 있는 것")
 
