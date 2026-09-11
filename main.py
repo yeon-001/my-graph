@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -72,6 +71,7 @@ selected_movie = st.selectbox(
     movie_list
 )
 
+
 # 선택한 영화 데이터
 movie_df = df[
     df["영화명"].astype(str) == selected_movie
@@ -80,13 +80,15 @@ movie_df = df[
 # 날짜순 정렬
 movie_df = movie_df.sort_values("날짜")
 
-# 날짜별 일관객 합계
+
+# 날짜별 일관객
 movie_daily = (
     movie_df
     .groupby("날짜", as_index=False)["일관객"]
     .sum()
     .sort_values("날짜")
 )
+
 
 # Plotly 선 그래프
 fig = px.line(
@@ -101,12 +103,14 @@ fig = px.line(
     }
 )
 
-# 마우스를 올렸을 때 날짜와 관객수가 표시되도록 설정
+
+# 마우스를 올렸을 때 날짜와 관객수 표시
 fig.update_traces(
     hovertemplate=
     "날짜: %{x|%Y-%m-%d}<br>"
     "관객수: %{y:,.0f}명"
 )
+
 
 fig.update_layout(
     hovermode="x unified",
@@ -115,6 +119,7 @@ fig.update_layout(
     height=500
 )
 
+
 st.plotly_chart(
     fig,
     use_container_width=True
@@ -122,8 +127,7 @@ st.plotly_chart(
 
 
 # ============================================================
-# 이 그래프로 알 수 있는 것
-# 사용자가 직접 작성
+# 직접 작성하는 부분
 # ============================================================
 
 st.subheader("이 그래프로 알 수 있는 것")
@@ -137,14 +141,13 @@ st.text_area(
 
 # ============================================================
 # 그래프 2
-# 앞으로 새로운 그래프를 추가할 공간
 # ============================================================
 
 st.divider()
 
 st.header("📊 그래프 2")
 
-# 여기에 두 번째 그래프를 추가하세요.
+st.write("앞으로 추가할 그래프 영역입니다.")
 
 st.subheader("이 그래프로 알 수 있는 것")
 
@@ -158,14 +161,13 @@ st.text_area(
 
 # ============================================================
 # 그래프 3
-# 앞으로 새로운 그래프를 추가할 공간
 # ============================================================
 
 st.divider()
 
 st.header("📊 그래프 3")
 
-# 여기에 세 번째 그래프를 추가하세요.
+st.write("앞으로 추가할 그래프 영역입니다.")
 
 st.subheader("이 그래프로 알 수 있는 것")
 
@@ -175,4 +177,3 @@ st.text_area(
     height=100,
     key="graph3_explanation"
 )
-```
