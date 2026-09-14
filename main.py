@@ -135,7 +135,7 @@ top5_movies = (
     .tolist()
 )
 
-# 상위 5편
+# 상위 5편의 날짜별 일관객
 top5_df = df[
     df["영화명"].isin(top5_movies)
 ].copy()
@@ -179,7 +179,6 @@ top5_daily = top5_daily.sort_values(
     ["날짜", "영화명"]
 )
 
-# 그래프
 fig2 = px.line(
     top5_daily,
     x="날짜",
@@ -232,7 +231,6 @@ st.divider()
 
 st.header("📉 그래프 3. 날짜별 10위권 일관객 합계")
 
-# 날짜별 10위권 일관객 합계
 daily_total = (
     df.groupby("날짜", as_index=False)["일관객"]
     .sum()
@@ -245,11 +243,9 @@ top3_days = (
     .sort_values("일관객", ascending=False)
     .head(3)
     .copy()
+    .sort_values("날짜")
 )
 
-top3_days = top3_days.sort_values("날짜")
-
-# 영역 그래프
 fig3 = px.area(
     daily_total,
     x="날짜",
@@ -274,7 +270,7 @@ fig3.update_layout(
     height=600
 )
 
-# 가장 큰 3일 표시
+# 합계가 가장 컸던 3일 표시
 for _, row in top3_days.iterrows():
 
     date = row["날짜"]
@@ -314,10 +310,7 @@ st.divider()
 
 st.header("🏆 그래프 4. 영화별 일관객 TOP 10")
 
-# ------------------------------------------------------------
-# 영화별 전체 기간 일관객 합계
-# ------------------------------------------------------------
-
+# 영화별 전체 기간 일관객 합계 + 10위권에 든 날수
 movie_total = (
     df.groupby("영화명", as_index=False)
     .agg(
@@ -326,7 +319,7 @@ movie_total = (
     )
 )
 
-# 총 일관객 기준으로 내림차순 정렬 후 TOP 10
+# 총 일관객 기준 TOP 10
 top10_movies = (
     movie_total
     .sort_values(
@@ -337,18 +330,11 @@ top10_movies = (
     .copy()
 )
 
-# ------------------------------------------------------------
-# 가로 막대그래프에서 관객이 많은 영화가 위에 오도록
-# ------------------------------------------------------------
-
+# 가로 막대그래프에서 많은 영화가 위에 오도록
 top10_movies = top10_movies.sort_values(
     "총_일관객",
     ascending=True
 )
-
-# ------------------------------------------------------------
-# 가로 막대그래프 생성
-# ------------------------------------------------------------
 
 fig4 = px.bar(
     top10_movies,
@@ -362,7 +348,6 @@ fig4 = px.bar(
     }
 )
 
-# 마우스를 올렸을 때 총 관객수 + 10위권에 든 날수 표시
 fig4.update_traces(
     customdata=top10_movies[
         ["10위권_일수"]
@@ -373,7 +358,6 @@ fig4.update_traces(
     "10위권에 든 날수: %{customdata[0]}일"
 )
 
-# 많은 영화가 위쪽에 오도록 y축을 뒤집음
 fig4.update_layout(
     xaxis_title="전체 기간 일관객 합계(명)",
     yaxis_title="영화",
@@ -395,4 +379,125 @@ st.text_area(
     placeholder="이 그래프로 알 수 있는 것을 여기에 작성하세요.",
     height=100,
     key="graph4_explanation"
+)
+
+
+# ============================================================
+# 그래프 5. 월 × 요일별 일관객 합계 히트맵
+# ============================================================
+
+st.divider()
+
+st.header("🔥 그래프 5. 월 × 요일별 일관객 합계")
+
+# ------------------------------------------------------------
+# 날짜에서 월과 요일 추출
+# ------------------------------------------------------------
+
+heatmap_df = df.copy()
+
+heatmap_df["월"] = heatmap_df["날짜"].dt.month
+
+# 월요일=0, 화요일=1, ... 일요일=6
+weekday_number = heatmap_df["날짜"].dt.weekday
+
+weekday_map = {
+    0: "월요일",
+    1: "화요일",
+    2: "수요일",
+    3: "목요일",
+    4: "금요일",
+    5: "토요일",
+    6: "일요일"
+}
+
+heatmap_df["요일"] = weekday_number.map(weekday_map)
+
+
+# ------------------------------------------------------------
+# 월 × 요일별 일관객 합계 계산
+# ------------------------------------------------------------
+
+monthly_weekday = (
+    heatmap_df
+    .groupby(
+        ["월", "요일"],
+        as_index=False
+    )["일관객"]
+    .sum()
+)
+
+
+# ------------------------------------------------------------
+# 요일 순서 지정
+# ------------------------------------------------------------
+
+weekday_order = [
+    "월요일",
+    "화요일",
+    "수요일",
+    "목요일",
+    "금요일",
+    "토요일",
+    "일요일"
+]
+
+monthly_weekday["요일"] = pd.Categorical(
+    monthly_weekday["요일"],
+    categories=weekday_order,
+    ordered=True
+)
+
+monthly_weekday = monthly_weekday.sort_values(
+    ["월", "요일"]
+)
+
+
+# ------------------------------------------------------------
+# 히트맵
+# ------------------------------------------------------------
+
+fig5 = px.density_heatmap(
+    monthly_weekday,
+    x="요일",
+    y="월",
+    z="일관객",
+    category_orders={
+        "요일": weekday_order,
+        "월": list(range(1, 13))
+    },
+    color_continuous_scale="YlOrRd",
+    title="월 × 요일별 일관객 합계",
+    labels={
+        "요일": "요일",
+        "월": "월",
+        "일관객": "일관객 합계"
+    },
+    text_auto=".2s"
+)
+
+fig5.update_traces(
+    hovertemplate=
+    "%{y}월 %{x}<br>"
+    "일관객 합계: %{z:,.0f}명"
+)
+
+fig5.update_layout(
+    xaxis_title="요일",
+    yaxis_title="월",
+    height=600
+)
+
+st.plotly_chart(
+    fig5,
+    use_container_width=True
+)
+
+st.subheader("이 그래프로 알 수 있는 것")
+
+st.text_area(
+    "내용을 직접 입력하세요.",
+    placeholder="이 그래프로 알 수 있는 것을 여기에 작성하세요.",
+    height=100,
+    key="graph5_explanation"
 )
