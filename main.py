@@ -1,265 +1,401 @@
 import streamlit as st
+import requests
 import pandas as pd
+from datetime import datetime, timedelta, timezone
 
-# --------------------------------
-# 페이지 설정
-# --------------------------------
+
+# ---------------------------------------
+# 1. 기본 설정
+# ---------------------------------------
 
 st.set_page_config(
-    page_title="서울 연평균 기온 변화",
-    page_icon="🌡️",
+    page_title="박스오피스",
+    page_icon="🎬",
     layout="wide"
 )
 
-DATA_URL = "https://raw.githubusercontent.com/greatsong/modudata/main/data/seoul.csv"
+st.title("🎬 일일 박스오피스")
 
 
-# --------------------------------
-# 데이터 불러오기
-# --------------------------------
+# ---------------------------------------
+# 2. 한국 시간(KST) 기준 날짜 계산
+# ---------------------------------------
 
-@st.cache_data
-def load_data():
-    df = pd.read_csv(DATA_URL)
+KST = timezone(timedelta(hours=9))
 
-    # 날짜 변환
-    df["날짜"] = pd.to_datetime(df["날짜"])
+now_kst = datetime.now(KST)
 
-    # 기온 열 숫자로 변환
-    for column in ["평균기온", "최저기온", "최고기온"]:
-        df[column] = pd.to_numeric(
-            df[column],
-            errors="coerce"
+today = now_kst.date()
+
+# 오늘은 아직 집계가 끝나지 않았으므로
+# 조회 가능한 가장 늦은 날짜는 어제
+yesterday = today - timedelta(days=1)
+
+
+# ---------------------------------------
+# 3. 날짜 선택
+# ---------------------------------------
+
+selected_date = st.date_input(
+    "📅 조회할 날짜를 선택하세요",
+    value=yesterday,
+    min_value=datetime(2000, 1, 1).date(),
+    max_value=yesterday
+)
+
+target_date = selected_date.strftime("%Y%m%d")
+
+display_date = selected_date.strftime("%Y년 %m월 %d일")
+
+
+# ---------------------------------------
+# 4. KOBIS API에서 데이터 가져오기
+# ---------------------------------------
+
+@st.cache_data(ttl=3600)
+def get_boxoffice(target_dt):
+
+    try:
+        # Streamlit Secrets에서 API 키 가져오기
+        api_key = st.secrets["KOBIS_KEY"]
+
+        url = (
+            "https://www.kobis.or.kr/kobisopenapi/"
+            "webservice/rest/boxoffice/"
+            "searchDailyBoxOfficeList.json"
         )
 
-    return df
+        params = {
+            "key": api_key,
+            "targetDt": target_dt
+        }
+
+        response = requests.get(
+            url,
+            params=params,
+            timeout=10
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        # API 오류
+        if "faultInfo" in data:
+            return None, "API_ERROR"
+
+        # 박스오피스 결과가 없는 경우
+        if "boxOfficeResult" not in data:
+            return None, "NO_RESULT"
+
+        movie_list = data["boxOfficeResult"].get(
+            "dailyBoxOfficeList",
+            []
+        )
+
+        # 영화 목록이 비어 있는 경우
+        if not movie_list:
+            return None, "EMPTY"
+
+        return movie_list, None
+
+    except KeyError:
+        return None, "NO_KEY"
+
+    except requests.exceptions.RequestException:
+        return None, "CONNECTION_ERROR"
+
+    except ValueError:
+        return None, "DATA_ERROR"
+
+    except Exception:
+        return None, "UNKNOWN_ERROR"
 
 
-df = load_data()
+# ---------------------------------------
+# 5. 선택한 날짜 데이터 가져오기
+# ---------------------------------------
+
+movie_list, error_type = get_boxoffice(target_date)
 
 
-# --------------------------------
-# 연도별 평균기온 계산
-# --------------------------------
+# ---------------------------------------
+# 6. 오류 처리
+# ---------------------------------------
 
-df["연도"] = df["날짜"].dt.year
+if error_type == "EMPTY":
+    st.warning("📭 그날은 아직 집계 전입니다")
+    st.stop()
 
-yearly_temp = (
-    df.groupby("연도")["평균기온"]
-    .mean()
-    .reset_index()
+elif error_type == "NO_KEY":
+    st.error(
+        "⚠️ KOBIS_KEY가 설정되어 있지 않습니다.\n\n"
+        "Streamlit Cloud의 Secrets에 KOBIS_KEY를 등록해주세요."
+    )
+    st.stop()
+
+elif error_type == "API_ERROR":
+    st.error(
+        "⚠️ KOBIS API에서 오류가 발생했습니다.\n\n"
+        "API 키가 올바른지 확인해주세요."
+    )
+    st.stop()
+
+elif error_type == "NO_RESULT":
+    st.warning("📭 그날은 아직 집계 전입니다")
+    st.stop()
+
+elif error_type == "CONNECTION_ERROR":
+    st.error(
+        "⚠️ KOBIS API에 연결하지 못했습니다.\n\n"
+        "잠시 후 다시 시도해주세요."
+    )
+    st.stop()
+
+elif error_type == "DATA_ERROR":
+    st.error(
+        "⚠️ API에서 받은 데이터를 읽을 수 없습니다."
+    )
+    st.stop()
+
+elif error_type == "UNKNOWN_ERROR":
+    st.error(
+        "⚠️ 알 수 없는 오류가 발생했습니다."
+    )
+    st.stop()
+
+
+# ---------------------------------------
+# 7. 날짜 표시
+# ---------------------------------------
+
+st.subheader(f"📅 {display_date} 박스오피스")
+
+
+# ---------------------------------------
+# 8. DataFrame으로 변환
+# ---------------------------------------
+
+df = pd.DataFrame(movie_list)
+
+
+# ---------------------------------------
+# 9. 숫자 데이터를 숫자로 변환
+# ---------------------------------------
+
+number_columns = [
+    "rank",
+    "rankInten",
+    "audiCnt",
+    "audiAcc",
+    "scrnCnt"
+]
+
+for column in number_columns:
+    df[column] = pd.to_numeric(
+        df[column],
+        errors="coerce"
+    ).fillna(0)
+
+
+# 순위순으로 정렬
+df = df.sort_values(
+    by="rank",
+    ascending=True
 )
 
-yearly_temp["평균기온"] = yearly_temp["평균기온"].round(2)
 
-start_year = int(yearly_temp["연도"].min())
-end_year = int(yearly_temp["연도"].max())
+# ---------------------------------------
+# 10. 1위 영화 보여주기
+# ---------------------------------------
 
+first_movie = df.iloc[0]
 
-# --------------------------------
-# 제목
-# --------------------------------
-
-st.title("🌡️ 서울의 연평균 기온 변화")
+st.subheader("🏆 1위 영화")
 
 st.markdown(
-    "서울의 일별 기온 데이터를 이용해 "
-    "**연도별 평균기온의 변화**와 "
-    "원본 데이터의 **요약통계**를 살펴봅니다."
+    f"## {int(first_movie['rank'])}위 · "
+    f"{first_movie['movieNm']}"
 )
 
-st.divider()
-
-
-# --------------------------------
-# 연평균 기온 그래프
-# --------------------------------
-
-st.subheader(
-    f"📈 {start_year}년 ~ {end_year}년 연평균 기온"
-)
-
-st.line_chart(
-    yearly_temp,
-    x="연도",
-    y="평균기온",
-    x_label="연도",
-    y_label="평균기온 (℃)",
-    height=500
-)
-
-st.caption(
-    "※ 각 연도의 일별 평균기온을 평균하여 연평균 기온을 계산했습니다."
-)
-
-
-# --------------------------------
-# 데이터 기본 정보
-# --------------------------------
-
-st.subheader("📊 데이터 기본 정보")
-
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.metric(
-        "전체 관측 건수",
-        f"{len(df):,}건"
+        "일일 관객 수",
+        f"{int(first_movie['audiCnt']):,}명"
     )
 
 with col2:
     st.metric(
-        "분석 시작 연도",
-        f"{start_year}년"
+        "누적 관객 수",
+        f"{int(first_movie['audiAcc']):,}명"
     )
 
 with col3:
     st.metric(
-        "분석 마지막 연도",
-        f"{end_year}년"
-    )
-
-with col4:
-    st.metric(
-        "분석 연도 수",
-        f"{len(yearly_temp):,}년"
+        "상영 스크린 수",
+        f"{int(first_movie['scrnCnt']):,}개"
     )
 
 
-# --------------------------------
-# 기온 요약통계
-# 행과 열을 바꾼 형태
-# --------------------------------
+# ---------------------------------------
+# 11. 전체 박스오피스 표
+# ---------------------------------------
 
-st.subheader("📋 원본 데이터 기온 요약통계")
+st.subheader("🎞️ 전체 박스오피스")
 
-st.markdown(
-    "원본 일별 기온 데이터의 "
-    "**개수, 평균, 표준편차, 최소값, 사분위수, 중앙값, 최대값**입니다."
+display_df = df[
+    [
+        "rank",
+        "rankInten",
+        "movieNm",
+        "openDt",
+        "audiCnt",
+        "audiAcc",
+        "scrnCnt"
+    ]
+].copy()
+
+
+# ---------------------------------------
+# 12. 누적 관객 100만 명 이상 트로피 표시
+# ---------------------------------------
+
+def add_trophy(row):
+
+    movie_name = row["movieNm"]
+
+    if row["audiAcc"] > 1_000_000:
+        movie_name += " 🏆"
+
+    return movie_name
+
+
+display_df["movieNm"] = display_df.apply(
+    add_trophy,
+    axis=1
 )
 
-summary = df[
-    ["평균기온", "최저기온", "최고기온"]
-].describe()
 
-# 통계 항목을 한국어로 변경
-summary = summary.rename(
-    index={
-        "count": "개수",
-        "mean": "평균",
-        "std": "표준편차",
-        "min": "최소값",
-        "25%": "25%",
-        "50%": "중앙값",
-        "75%": "75%",
-        "max": "최대값"
-    }
+# ---------------------------------------
+# 13. 순위 증감 표시
+# ---------------------------------------
+
+def rank_change(row):
+
+    change = int(row["rankInten"])
+
+    if change > 0:
+        return f"🔺 +{change}"
+
+    elif change < 0:
+        return f"🔻 {change}"
+
+    else:
+        return "➖ 0"
+
+
+display_df["rankInten"] = display_df.apply(
+    rank_change,
+    axis=1
 )
 
-# 기온 종류를 열로 설정
-summary.columns = [
-    "평균기온",
-    "최저기온",
-    "최고기온"
+
+# ---------------------------------------
+# 14. 표의 열 이름 변경
+# ---------------------------------------
+
+display_df.columns = [
+    "순위",
+    "전일 대비",
+    "영화명",
+    "개봉일",
+    "일일 관객 수",
+    "누적 관객 수",
+    "스크린 수"
 ]
 
-summary = summary.round(2)
+
+# ---------------------------------------
+# 15. 숫자에 쉼표 표시
+# ---------------------------------------
+
+display_df["일일 관객 수"] = display_df[
+    "일일 관객 수"
+].map(lambda x: f"{int(x):,}")
+
+display_df["누적 관객 수"] = display_df[
+    "누적 관객 수"
+].map(lambda x: f"{int(x):,}")
+
+display_df["스크린 수"] = display_df[
+    "스크린 수"
+].map(lambda x: f"{int(x):,}")
+
+
+# ---------------------------------------
+# 16. 전체 표 보여주기
+# ---------------------------------------
 
 st.dataframe(
-    summary,
-    use_container_width=True
-)
-
-
-# --------------------------------
-# 지점 요약통계
-# --------------------------------
-
-st.subheader("📍 지점 요약통계")
-
-# 지점별 관측 건수
-station_counts = df["지점"].value_counts()
-
-# 지점 요약통계
-station_summary = pd.DataFrame({
-    "항목": [
-        "전체 관측 건수",
-        "고유 지점 수",
-        "가장 많이 기록된 지점",
-        "가장 많이 기록된 지점의 관측 건수",
-        "가장 적게 기록된 지점",
-        "가장 적게 기록된 지점의 관측 건수"
-    ],
-    "값": [
-        f"{df['지점'].count():,}건",
-        f"{df['지점'].nunique():,}개",
-        str(station_counts.index[0]),
-        f"{station_counts.iloc[0]:,}건",
-        str(station_counts.index[-1]),
-        f"{station_counts.iloc[-1]:,}건"
-    ]
-})
-
-st.dataframe(
-    station_summary,
+    display_df,
     use_container_width=True,
     hide_index=True
 )
 
 
-# --------------------------------
-# 지점별 관측 건수
-# --------------------------------
+# ---------------------------------------
+# 17. 관객 수 TOP 5 그래프
+# ---------------------------------------
 
-with st.expander("📍 지점별 관측 건수 보기"):
-
-    station_table = (
-        df["지점"]
-        .value_counts()
-        .reset_index()
-    )
-
-    station_table.columns = [
-        "지점",
-        "관측 건수"
-    ]
-
-    st.dataframe(
-        station_table,
-        use_container_width=True,
-        hide_index=True
-    )
+st.subheader("📊 관객 수 TOP 5")
 
 
-# --------------------------------
-# 연도별 평균기온
-# --------------------------------
-
-with st.expander("📅 연도별 평균기온 데이터 보기"):
-
-    display_df = yearly_temp.copy()
-
-    display_df["평균기온"] = display_df[
-        "평균기온"
-    ].map(
-        lambda x: f"{x:.2f} ℃"
-    )
-
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True
-    )
+# 먼저 관객 수가 가장 많은 영화 5편을 선택
+top5 = df.sort_values(
+    by="audiCnt",
+    ascending=False
+).head(5).copy()
 
 
-# --------------------------------
-# 원본 데이터 미리보기
-# --------------------------------
+# ---------------------------------------
+# ⭐ 중요
+# ---------------------------------------
+# TOP 5를 관객 수 기준 "오름차순"으로 정렬
+#
+# 작은 관객 수
+#       ↓
+# 큰 관객 수
+#
+# 영화 이름이 아니라 audiCnt 숫자를 기준으로 정렬합니다.
+top5 = top5.sort_values(
+    by="audiCnt",
+    ascending=True
+).reset_index(drop=True)
 
-with st.expander("🔎 원본 데이터 미리보기"):
 
-    st.dataframe(
-        df.drop(columns=["연도"]).head(100),
-        use_container_width=True,
-        hide_index=True
-    )
+# 그래프에 넣을 데이터
+chart_df = pd.DataFrame({
+    "영화명": top5["movieNm"].astype(str),
+    "관객 수": top5["audiCnt"].astype(int)
+})
+
+
+# ---------------------------------------
+# 관객 수 오름차순 그래프
+# ---------------------------------------
+#
+# 왼쪽  → 관객 수 적음
+# 오른쪽 → 관객 수 많음
+#
+# 따라서 가장 많은 관객 수를 가진 영화가
+# 항상 그래프의 가장 뒤(오른쪽)에 위치합니다.
+
+st.bar_chart(
+    chart_df,
+    x="영화명",
+    y="관객 수",
+    x_label="영화",
+    y_label="관객 수"
+)
