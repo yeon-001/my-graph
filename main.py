@@ -28,7 +28,7 @@ now_kst = datetime.now(KST)
 today = now_kst.date()
 
 # 오늘은 아직 집계가 끝나지 않았으므로
-# 조회 가능한 가장 늦은 날짜는 어제
+# 조회 가능한 가장 최근 날짜는 어제
 yesterday = today - timedelta(days=1)
 
 
@@ -198,6 +198,22 @@ for column in number_columns:
     ).fillna(0)
 
 
+# 관객 수는 정수로 확실하게 변환
+df["audiCnt"] = df["audiCnt"].astype(int)
+
+# 누적 관객 수도 정수로 변환
+df["audiAcc"] = df["audiAcc"].astype(int)
+
+# 스크린 수도 정수로 변환
+df["scrnCnt"] = df["scrnCnt"].astype(int)
+
+# 순위도 정수로 변환
+df["rank"] = df["rank"].astype(int)
+
+# 순위 증감도 정수로 변환
+df["rankInten"] = df["rankInten"].astype(int)
+
+
 # 순위순으로 정렬
 df = df.sort_values(
     by="rank",
@@ -352,49 +368,62 @@ st.dataframe(
 st.subheader("📊 관객 수 TOP 5")
 
 
-# 먼저 관객 수가 가장 많은 영화 5편을 선택
-top5 = df.sort_values(
-    by="audiCnt",
-    ascending=False
-).head(5).copy()
+# 관객 수가 가장 많은 영화 5편을 먼저 선택
+top5 = df.nlargest(
+    5,
+    "audiCnt"
+).copy()
 
 
 # ---------------------------------------
-# ⭐ 중요
+# ⭐ 관객 수 기준 오름차순 정렬
 # ---------------------------------------
-# TOP 5를 관객 수 기준 "오름차순"으로 정렬
 #
-# 작은 관객 수
-#       ↓
-# 큰 관객 수
+# 왼쪽  → 관객 수 적음
+# 가운데 → 관객 수 중간
+# 오른쪽 → 관객 수 많음
 #
-# 영화 이름이 아니라 audiCnt 숫자를 기준으로 정렬합니다.
+# 즉 가장 많은 영화가 맨 오른쪽에 위치
+# ---------------------------------------
+
 top5 = top5.sort_values(
     by="audiCnt",
     ascending=True
 ).reset_index(drop=True)
 
 
-# 그래프에 넣을 데이터
-chart_df = pd.DataFrame({
-    "영화명": top5["movieNm"].astype(str),
-    "관객 수": top5["audiCnt"].astype(int)
-})
+# ---------------------------------------
+# 그래프용 데이터 생성
+# ---------------------------------------
+
+chart_df = top5[
+    ["movieNm", "audiCnt"]
+].copy()
+
+chart_df.columns = [
+    "영화명",
+    "관객 수"
+]
 
 
 # ---------------------------------------
-# 관객 수 오름차순 그래프
+# 영화명을 인덱스로 설정
 # ---------------------------------------
 #
-# 왼쪽  → 관객 수 적음
-# 오른쪽 → 관객 수 많음
-#
-# 따라서 가장 많은 관객 수를 가진 영화가
-# 항상 그래프의 가장 뒤(오른쪽)에 위치합니다.
+# 위에서 정렬한 순서를 그대로 유지
+# ---------------------------------------
+
+chart_df = chart_df.set_index(
+    "영화명"
+)
+
+
+# ---------------------------------------
+# 오름차순 그래프
+# ---------------------------------------
 
 st.bar_chart(
     chart_df,
-    x="영화명",
     y="관객 수",
     x_label="영화",
     y_label="관객 수"
